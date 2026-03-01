@@ -1,0 +1,18 @@
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Project memory / working notes
+memory/
+memo.txt
+
+# Sample output files
+sample/添削メモ_*
+
+# Windows temp
+*.tmp
+Thumbs.db
+Desktop.ini
+
+# OS
+.DS_Store

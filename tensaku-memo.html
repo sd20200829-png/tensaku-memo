@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>添削メモツール</title>
+<style>
+:root {
+  --bg: #f0f0f0;
+  --panel-bg: #fff;
+  --header-bg: #2c3e50;
+  --header-text: #ecf0f1;
+  --border: #ddd;
+  --line-num: #999;
+  --line-hover: #f5f5f5;
+  --marker-yellow: rgba(255, 235, 59, 0.4);
+  --marker-border: rgba(255, 193, 7, 0.6);
+  --memo-card-bg: #fafafa;
+  --accent: #3498db;
+  --danger: #e74c3c;
+  --success: #27ae60;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "Meiryo", "Hiragino Sans", sans-serif;
+  background: var(--bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#toolbar {
+  background: var(--header-bg);
+  color: var(--header-text);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.toolbar-group { display: flex; align-items: center; gap: 8px; }
+#toolbar button {
+  background: rgba(255,255,255,0.15);
+  color: var(--header-text);
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+#toolbar button:hover { background: rgba(255,255,255,0.25); }
+#toolbar button:disabled { opacity: 0.4; cursor: default; }
+#file-name { font-size: 13px; opacity: 0.8; }
+#memo-count { font-size: 13px; opacity: 0.8; }
+
+#panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+.panel {
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.panel:last-child { border-right: none; }
+.panel-header {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: bold;
+  border-bottom: 1px solid var(--border);
+  background: #fafafa;
+  flex-shrink: 0;
+}
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* Left panel */
+#lines-container { padding: 8px 0; }
+.line {
+  display: flex;
+  padding: 1px 16px 1px 0;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-height: 1.6em;
+}
+.line:hover { background: var(--line-hover); }
+.line.has-memo {
+  background: rgba(255, 235, 59, 0.15);
+  border-left: 3px solid rgba(255, 193, 7, 0.5);
+}
+.line.has-memo:hover { background: rgba(255, 235, 59, 0.25); }
+.line.connected {
+  background: rgba(52, 152, 219, 0.08) !important;
+  border-bottom: 2px solid var(--accent);
+}
+.line-num {
+  width: 48px;
+  min-width: 48px;
+  text-align: right;
+  padding-right: 12px;
+  color: var(--line-num);
+  font-size: 12px;
+  font-family: monospace;
+  user-select: none;
+  line-height: 1.7;
+}
+.line-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.marker {
+  background: var(--marker-yellow);
+  border-bottom: 2px solid var(--marker-border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.marker:hover { background: rgba(255, 193, 7, 0.5); }
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #aaa;
+  font-size: 14px;
+  text-align: center;
+  line-height: 2;
+  padding: 40px;
+}
+.drop-active { outline: 3px dashed var(--accent); outline-offset: -3px; }
+
+/* Right panel - memo cards */
+#memos-container { padding: 8px; }
+.memo-card {
+  background: var(--memo-card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.memo-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+}
+.memo-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: #f5f5f5;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+}
+.memo-header:hover { background: #eee; }
+.memo-line-badge {
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: bold;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.memo-marked-text {
+  color: #666;
+  margin-left: 8px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.memo-delete {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  opacity: 0.4;
+}
+.memo-delete:hover { opacity: 1; }
+.memo-quote {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #888;
+  border-left: 3px solid var(--border);
+  margin: 6px 10px 2px;
+  background: #f9f9f9;
+  white-space: pre-wrap;
+  max-height: 48px;
+  overflow-y: auto;
+}
+.memo-card .field-label {
+  font-size: 10px;
+  color: #999;
+  margin: 6px 10px 2px;
+  font-weight: bold;
+}
+.memo-card textarea {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 0 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 40px;
+  line-height: 1.5;
+  background: #fff;
+  color: #333;
+}
+.memo-card textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.memo-card textarea.suggestion { color: var(--success); }
+.memo-card .card-bottom { height: 8px; }
+
+/* Floating add button */
+#add-btn {
+  position: fixed;
+  background: var(--accent);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 100;
+  user-select: none;
+}
+#add-btn:hover { background: #2980b9; }
+
+/* Connector SVG overlay */
+#connector-svg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+  display: none;
+}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <div class="toolbar-group">
+    <button id="btn-open">ファイルを開く</button>
+    <span id="file-name">ファイル未選択</span>
+  </div>
+  <div class="toolbar-group">
+    <span id="memo-count"></span>
+    <button id="btn-export" disabled>エクスポート</button>
+    <button id="btn-clear" disabled>全クリア</button>
+  </div>
+</div>
+
+<div id="panels">
+  <div class="panel" id="left-panel">
+    <div class="panel-header">原文 <span id="line-count"></span></div>
+    <div class="panel-body" id="left-body">
+      <div id="lines-container">
+        <div class="placeholder">ファイルをドラッグ＆ドロップ<br>または「ファイルを開く」で読み込み</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel" id="right-panel">
+    <div class="panel-header">添削メモ</div>
+    <div class="panel-body" id="right-body">
+      <div id="memos-container"></div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".md,.txt" hidden>
+<div id="add-btn" hidden>メモ追加</div>
+
+<svg id="connector-svg">
+  <line id="connector-line" stroke="#3498db" stroke-width="1.5" stroke-dasharray="6,3" />
+</svg>
+
+<script>
+const state = { fileName: '', lines: [], memos: [], nextId: 1, fileHandle: null, saveHandle: null };
+const $ = id => document.getElementById(id);
+const linesContainer = $('lines-container');
+const memosContainer = $('memos-container');
+const addBtn = $('add-btn');
+const leftBody = $('left-body');
+const rightBody = $('right-body');
+const connSvg = $('connector-svg');
+const connLine = $('connector-line');
+let activeMemoId = null;
+
+// ===== File Loading =====
+$('btn-open').addEventListener('click', async () => {
+  if (window.showOpenFilePicker) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.txt'] } }]
+      });
+      state.fileHandle = handle;
+      const file = await handle.getFile();
+      loadContent(await file.text(), file.name);
+      return;
+    } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  $('file-input').value = ''; $('file-input').click();
+});
+$('file-input').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+leftBody.addEventListener('dragover', e => { e.preventDefault(); leftBody.classList.add('drop-active'); });
+leftBody.addEventListener('dragleave', () => leftBody.classList.remove('drop-active'));
+leftBody.addEventListener('drop', async e => {
+  e.preventDefault(); leftBody.classList.remove('drop-active');
+  const item = e.dataTransfer.items && e.dataTransfer.items[0];
+  if (item && item.getAsFileSystemHandle) {
+    try {
+      const handle = await item.getAsFileSystemHandle();
+      if (handle.kind === 'file') {
+        state.fileHandle = handle;
+        const file = await handle.getFile();
+        loadContent(await file.text(), file.name);
+        return;
+      }
+    } catch {}
+  }
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function loadFile(file) {
+  state.fileHandle = null;
+  const reader = new FileReader();
+  reader.onload = e => loadContent(e.target.result, file.name);
+  reader.readAsText(file);
+}
+
+function loadContent(text, fileName) {
+  state.fileName = fileName;
+  const marker = '<!-- TENSAKU_MEMO_START -->';
+  const markerIdx = text.indexOf(marker);
+
+  if (markerIdx !== -1) {
+    // Annotated file: split original text and memos
+    let original = text.substring(0, markerIdx).replace(/\n*---\n*$/, '');
+    state.lines = original.split('\n');
+    const dataMatch = text.match(/<!-- TENSAKU_DATA\n([\s\S]*?)\nTENSAKU_DATA -->/);
+    if (dataMatch) {
+      try {
+        state.memos = JSON.parse(dataMatch[1]);
+        state.nextId = Math.max(...state.memos.map(m => m.id), 0) + 1;
+      } catch { state.memos = []; state.nextId = 1; }
+    } else { state.memos = []; state.nextId = 1; }
+  } else {
+    // Plain file: no memos
+    state.lines = text.split('\n');
+    state.memos = [];
+    state.nextId = 1;
+  }
+
+  $('file-name').textContent = fileName;
+  $('btn-export').disabled = false;
+  $('btn-clear').disabled = false;
+  activeMemoId = null;
+  renderAll();
+}
+
+// ===== Rendering =====
+function renderAll() { renderLines(); renderMemos(); updateCount(); }
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderLines() {
+  const total = state.lines.length;
+  if (!total) return;
+  const w = String(total).length;
+  $('line-count').textContent = `(${total}行)`;
+  let html = '';
+  for (let i = 0; i < total; i++) {
+    const ln = i + 1;
+    const memos = state.memos.filter(m => ln >= m.startLine && ln <= m.endLine);
+    const has = memos.length > 0;
+    const connected = activeMemoId && memos.some(m => m.id === activeMemoId);
+    let cls = 'line';
+    if (has) cls += ' has-memo';
+    if (connected) cls += ' connected';
+    html += `<div class="${cls}" data-line="${ln}">`;
+    html += `<span class="line-num">${String(ln).padStart(w)}</span>`;
+    html += `<span class="line-text">${renderLineText(state.lines[i], ln, memos) || ' '}</span>`;
+    html += `</div>`;
+  }
+  linesContainer.innerHTML = html;
+}
+
+function renderLineText(text, lineNum, memos) {
+  if (!text) return ' ';
+  const marks = [];
+  for (const m of memos) {
+    if (!m.markedText) continue;
+    const parts = m.markedText.split('\n');
+    const t = m.startLine === m.endLine ? m.markedText : parts[lineNum - m.startLine];
+    if (t && text.includes(t)) {
+      const idx = text.indexOf(t);
+      marks.push({ start: idx, end: idx + t.length, id: m.id });
+    }
+  }
+  if (!marks.length) return escapeHtml(text);
+  marks.sort((a, b) => a.start - b.start);
+  const clean = [marks[0]];
+  for (let i = 1; i < marks.length; i++) {
+    if (marks[i].start >= clean[clean.length - 1].end) clean.push(marks[i]);
+  }
+  let html = '', pos = 0;
+  for (const mk of clean) {
+    if (mk.start > pos) html += escapeHtml(text.slice(pos, mk.start));
+    html += `<span class="marker" data-memo-id="${mk.id}">${escapeHtml(text.slice(mk.start, mk.end))}</span>`;
+    pos = mk.end;
+  }
+  if (pos < text.length) html += escapeHtml(text.slice(pos));
+  return html;
+}
+
+function renderMemos(focusId) {
+  // Collect current textarea values before re-render
+  memosContainer.querySelectorAll('textarea').forEach(ta => {
+    const id = parseInt(ta.dataset.memoId);
+    const field = ta.dataset.field;
+    const m = state.memos.find(x => x.id === id);
+    if (m) m[field] = ta.value;
+  });
+
+  const sorted = [...state.memos].sort((a, b) => a.startLine - b.startLine);
+  let html = '';
+  for (const m of sorted) {
+    const label = m.startLine === m.endLine ? `L${m.startLine}` : `L${m.startLine}-${m.endLine}`;
+    const qLines = [];
+    for (let i = m.startLine; i <= m.endLine && i <= state.lines.length; i++) qLines.push(state.lines[i - 1]);
+    const marked = m.markedText ? escapeHtml('「' + truncate(m.markedText, 25) + '」') : '';
+    const isActive = m.id === (focusId || activeMemoId);
+
+    html += `<div class="memo-card${isActive ? ' active' : ''}" data-memo-id="${m.id}">`;
+    html += `<div class="memo-header" data-memo-id="${m.id}">`;
+    html += `<span class="memo-line-badge">${label}</span>`;
+    html += `<span class="memo-marked-text">${marked}</span>`;
+    html += `<button class="memo-delete" data-memo-id="${m.id}" title="削除">&times;</button>`;
+    html += `</div>`;
+    html += `<div class="memo-quote">${escapeHtml(qLines.join('\n'))}</div>`;
+    html += `<div class="field-label">メモ</div>`;
+    html += `<textarea data-memo-id="${m.id}" data-field="memo" placeholder="コメント・指摘…">${escapeHtml(m.memo || '')}</textarea>`;
+    html += `<div class="field-label">修正案</div>`;
+    html += `<textarea class="suggestion" data-memo-id="${m.id}" data-field="suggestion" placeholder="修正後のテキスト…（任意）">${escapeHtml(m.suggestion || '')}</textarea>`;
+    html += `<div class="card-bottom"></div>`;
+    html += `</div>`;
+  }
+  memosContainer.innerHTML = html;
+
+  if (focusId) {
+    activeMemoId = focusId;
+    setTimeout(() => {
+      const ta = memosContainer.querySelector(`textarea[data-memo-id="${focusId}"][data-field="memo"]`);
+      if (ta) { ta.focus(); ta.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    }, 50);
+  }
+}
+
+function truncate(s, max) { s = s.replace(/\n/g, ' '); return s.length > max ? s.slice(0, max) + '…' : s; }
+function updateCount() { $('memo-count').textContent = state.memos.length ? `メモ: ${state.memos.length}件` : ''; }
+
+// ===== Inline edit: auto-save on input =====
+let saveTimer = null;
+memosContainer.addEventListener('input', e => {
+  if (e.target.tagName !== 'TEXTAREA') return;
+  const id = parseInt(e.target.dataset.memoId);
+  const field = e.target.dataset.field;
+  const m = state.memos.find(x => x.id === id);
+  if (m) m[field] = e.target.value;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveMemos(); renderLines(); }, 500);
+});
+
+// ===== Connector line & active tracking =====
+memosContainer.addEventListener('focusin', e => {
+  if (e.target.tagName !== 'TEXTAREA') return;
+  const id = parseInt(e.target.dataset.memoId);
+  setActiveMemo(id);
+});
+
+memosContainer.addEventListener('focusout', e => {
+  if (e.target.tagName !== 'TEXTAREA') return;
+  const leavingMemoId = activeMemoId;
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (active && active.tagName === 'TEXTAREA' && active.closest('#memos-container')) {
+      const newId = parseInt(active.dataset.memoId);
+      if (newId !== activeMemoId) setActiveMemo(newId);
+      // Clean up the memo we left if it was empty
+      if (leavingMemoId && leavingMemoId !== newId) removeIfEmpty(leavingMemoId);
+    } else {
+      // Focus left memos entirely — clean up empty memo
+      if (leavingMemoId) removeIfEmpty(leavingMemoId);
+      clearActiveMemo();
+    }
+  }, 50);
+});
+
+function setActiveMemo(memoId) {
+  activeMemoId = memoId;
+  // Highlight card
+  memosContainer.querySelectorAll('.memo-card').forEach(c => c.classList.remove('active'));
+  const card = memosContainer.querySelector(`.memo-card[data-memo-id="${memoId}"]`);
+  if (card) card.classList.add('active');
+  // Highlight + scroll corresponding lines
+  const memo = state.memos.find(m => m.id === memoId);
+  if (!memo) return;
+  document.querySelectorAll('.line.connected').forEach(el => el.classList.remove('connected'));
+  for (let i = memo.startLine; i <= memo.endLine; i++) {
+    const lineEl = linesContainer.querySelector(`[data-line="${i}"]`);
+    if (lineEl) lineEl.classList.add('connected');
+  }
+  const firstLine = linesContainer.querySelector(`[data-line="${memo.startLine}"]`);
+  if (firstLine) firstLine.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  updateConnector();
+}
+
+function removeIfEmpty(memoId) {
+  // Collect latest textarea values first
+  memosContainer.querySelectorAll(`textarea[data-memo-id="${memoId}"]`).forEach(ta => {
+    const m = state.memos.find(x => x.id === memoId);
+    if (m) m[ta.dataset.field] = ta.value;
+  });
+  const m = state.memos.find(x => x.id === memoId);
+  if (m && !m.memo.trim() && !m.suggestion.trim()) {
+    state.memos = state.memos.filter(x => x.id !== memoId);
+    saveMemos();
+    renderAll();
+  }
+}
+
+function clearActiveMemo() {
+  activeMemoId = null;
+  memosContainer.querySelectorAll('.memo-card').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.line.connected').forEach(el => el.classList.remove('connected'));
+  connSvg.style.display = 'none';
+}
+
+function updateConnector() {
+  if (!activeMemoId) { connSvg.style.display = 'none'; return; }
+  const memo = state.memos.find(m => m.id === activeMemoId);
+  if (!memo) { connSvg.style.display = 'none'; return; }
+
+  const card = memosContainer.querySelector(`.memo-card[data-memo-id="${activeMemoId}"]`);
+  const lineEl = linesContainer.querySelector(`[data-line="${memo.startLine}"]`);
+  if (!card || !lineEl) { connSvg.style.display = 'none'; return; }
+
+  // Hide connector if the target line is not visible in left panel
+  const leftRect = leftBody.getBoundingClientRect();
+  const lineRect = lineEl.getBoundingClientRect();
+  if (lineRect.bottom < leftRect.top || lineRect.top > leftRect.bottom) {
+    connSvg.style.display = 'none';
+    return;
+  }
+
+  const cardRect = card.getBoundingClientRect();
+  const x1 = lineRect.right + 4;
+  const y1 = lineRect.top + lineRect.height / 2;
+  const x2 = cardRect.left - 4;
+  const y2 = cardRect.top + 28;
+
+  connLine.setAttribute('x1', x1);
+  connLine.setAttribute('y1', y1);
+  connLine.setAttribute('x2', x2);
+  connLine.setAttribute('y2', y2);
+  connSvg.style.display = 'block';
+}
+
+// Update connector on scroll
+leftBody.addEventListener('scroll', updateConnector);
+rightBody.addEventListener('scroll', updateConnector);
+window.addEventListener('resize', updateConnector);
+
+// ===== Text Selection & Add Button =====
+let pendingSelection = null;
+
+leftBody.addEventListener('mouseup', () => {
+  if (!state.lines.length) return;
+  setTimeout(() => {
+    const sel = window.getSelection();
+    if (sel.isCollapsed || !sel.toString().trim()) { addBtn.hidden = true; return; }
+    const range = sel.getRangeAt(0);
+    const sL = getLineNum(range.startContainer);
+    const eL = getLineNum(range.endContainer);
+    if (!sL || !eL) { addBtn.hidden = true; return; }
+    pendingSelection = {
+      startLine: Math.min(sL, eL), endLine: Math.max(sL, eL),
+      markedText: sel.toString()
+    };
+    const rect = range.getBoundingClientRect();
+    addBtn.style.left = Math.min(rect.right + 8, window.innerWidth - 100) + 'px';
+    addBtn.style.top = rect.top + 'px';
+    addBtn.hidden = false;
+  }, 10);
+});
+
+linesContainer.addEventListener('click', e => {
+  const markerEl = e.target.closest('.marker');
+  if (markerEl) {
+    const memoId = parseInt(markerEl.dataset.memoId);
+    activateMemoCard(memoId);
+    return;
+  }
+  const lineEl = e.target.closest('.line');
+  if (!lineEl) return;
+  if (!window.getSelection().isCollapsed) return;
+  const ln = parseInt(lineEl.dataset.line);
+  pendingSelection = { startLine: ln, endLine: ln, markedText: '' };
+  addMemo();
+});
+
+function getLineNum(node) {
+  let el = node.nodeType === 3 ? node.parentElement : node;
+  while (el && !el.classList?.contains('line')) el = el.parentElement;
+  return el ? parseInt(el.dataset.line) : null;
+}
+
+addBtn.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+addBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  addBtn.hidden = true;
+  window.getSelection().removeAllRanges();
+  addMemo();
+});
+
+document.addEventListener('mousedown', e => {
+  if (e.target !== addBtn && !addBtn.contains(e.target)) addBtn.hidden = true;
+});
+
+// ===== Create memo =====
+function findExistingMemo(startLine, endLine) {
+  return state.memos.find(m => m.startLine <= endLine && m.endLine >= startLine);
+}
+
+function addMemo() {
+  if (!pendingSelection) return;
+  const existing = findExistingMemo(pendingSelection.startLine, pendingSelection.endLine);
+  if (existing) {
+    // Same line already has a memo: update markedText if new selection, then focus it
+    if (pendingSelection.markedText && pendingSelection.markedText !== existing.markedText) {
+      existing.markedText = pendingSelection.markedText;
+      saveMemos();
+    }
+    pendingSelection = null;
+    renderLines();
+    renderMemos(existing.id);
+    return;
+  }
+  const newMemo = {
+    id: state.nextId++,
+    startLine: pendingSelection.startLine,
+    endLine: pendingSelection.endLine,
+    markedText: pendingSelection.markedText,
+    memo: '', suggestion: ''
+  };
+  state.memos.push(newMemo);
+  pendingSelection = null;
+  saveMemos();
+  renderLines();
+  renderMemos(newMemo.id);
+  updateCount();
+}
+
+function activateMemoCard(memoId) {
+  const ta = memosContainer.querySelector(`textarea[data-memo-id="${memoId}"][data-field="memo"]`);
+  if (ta) { ta.focus(); }
+  else { setActiveMemo(memoId); }
+}
+
+// ===== Memo card interactions =====
+memosContainer.addEventListener('click', e => {
+  if (e.target.closest('.memo-delete')) {
+    const id = parseInt(e.target.closest('.memo-delete').dataset.memoId);
+    state.memos = state.memos.filter(m => m.id !== id);
+    if (activeMemoId === id) clearActiveMemo();
+    saveMemos();
+    renderAll();
+    return;
+  }
+  const header = e.target.closest('.memo-header');
+  if (header) {
+    const id = parseInt(header.dataset.memoId);
+    const memo = state.memos.find(m => m.id === id);
+    if (memo) {
+      const lineEl = linesContainer.querySelector(`[data-line="${memo.startLine}"]`);
+      if (lineEl) {
+        lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        lineEl.style.background = 'rgba(52,152,219,0.2)';
+        setTimeout(() => lineEl.style.background = '', 1500);
+      }
+    }
+  }
+});
+
+// ===== Export =====
+$('btn-export').addEventListener('click', () => exportMemos());
+async function exportMemos() {
+  // Collect latest textarea values
+  memosContainer.querySelectorAll('textarea').forEach(ta => {
+    const id = parseInt(ta.dataset.memoId);
+    const m = state.memos.find(x => x.id === id);
+    if (m) m[ta.dataset.field] = ta.value;
+  });
+  saveMemos();
+
+  const valid = state.memos.filter(m => m.memo || m.suggestion);
+  if (!valid.length) { alert('メモがありません'); return; }
+  const sorted = [...valid].sort((a, b) => a.startLine - b.startLine);
+
+  // Original text + appended memos
+  let out = state.lines.join('\n');
+  out += '\n\n---\n\n<!-- TENSAKU_MEMO_START -->\n';
+
+  // JSON block for reliable round-trip import
+  out += '<!-- TENSAKU_DATA\n';
+  out += JSON.stringify(sorted.map(m => ({
+    id: m.id, startLine: m.startLine, endLine: m.endLine,
+    markedText: m.markedText, memo: m.memo, suggestion: m.suggestion
+  })));
+  out += '\nTENSAKU_DATA -->\n\n';
+
+  // Human/AI readable format
+  out += `# 添削メモ (${sorted.length}件)\n\n`;
+  for (const m of sorted) {
+    const label = m.startLine === m.endLine ? `L${m.startLine}` : `L${m.startLine}-${m.endLine}`;
+    const marked = m.markedText ? ` 「${m.markedText.replace(/\n/g, ' ')}」` : '';
+    out += `## ${label}${marked}\n`;
+    for (let i = m.startLine; i <= m.endLine && i <= state.lines.length; i++) out += `> ${state.lines[i - 1]}\n`;
+    out += '\n';
+    if (m.memo) out += `- **メモ**: ${m.memo}\n`;
+    if (m.suggestion) out += `- **修正案**: ${m.suggestion}\n`;
+    out += '\n';
+  }
+  out += '<!-- TENSAKU_MEMO_END -->\n';
+
+  // Save to same directory as source file
+  const baseName = state.fileName.replace(/\.[^.]+$/, '').replace(/^添削メモ_/, '');
+  const saveName = `添削メモ_${baseName}.md`;
+
+  if (window.showSaveFilePicker) {
+    try {
+      const opts = {
+        suggestedName: saveName,
+        types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+      };
+      // Use previous save handle, or source file handle for startIn
+      if (state.saveHandle) opts.startIn = state.saveHandle;
+      else if (state.fileHandle) opts.startIn = state.fileHandle;
+      const saveHandle = await window.showSaveFilePicker(opts);
+      state.saveHandle = saveHandle; // Remember for next export
+      const writable = await saveHandle.createWritable();
+      await writable.write(out);
+      await writable.close();
+      return;
+    } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  // Fallback
+  const blob = new Blob([out], { type: 'text/markdown; charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = saveName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ===== Clear =====
+$('btn-clear').addEventListener('click', () => {
+  if (!state.memos.length) return;
+  if (!confirm(`全${state.memos.length}件のメモを削除しますか？`)) return;
+  state.memos = []; state.nextId = 1;
+  clearActiveMemo();
+  saveMemos();
+  renderAll();
+});
+
+// ===== Persistence (in-memory only, no localStorage) =====
+function saveMemos() {
+  // Memos are kept in memory only. Export to file to persist.
+}
+
+// ===== Keyboard =====
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { addBtn.hidden = true; }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'e') { e.preventDefault(); if (state.memos.length) exportMemos(); }
+});
+</script>
+</body>
+</html>
